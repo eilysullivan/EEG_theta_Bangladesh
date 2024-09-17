@@ -1,0 +1,917 @@
+---
+title: "Crypto_EEG_CANTAB_paper"
+author: "Eily Sullivan"
+date: "5/2/2023"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Load packages, include=FALSE}
+
+rm(list=ls())
+library(tidyverse)
+library(haven)
+library(dplyr)
+library(foreign)
+library(lmtest)
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+#install.packages("standardize")
+library(standardize)
+library(ggthemes)
+library(texreg)
+library(rockchalk)
+library(stargazer)
+#install.packages("Hmisc")
+library(Hmisc)
+library(writexl)
+library("readxl")
+library(corrplot)
+#install.packages("correlation_matrix")
+library(psych)
+library(tidyr)
+#install.packages("broom")  # For tidying the model summary
+#library(broom)
+#install.packages("officer")  # For exporting to Word
+library(officer)
+#install.packages("imputeTS")
+
+
+
+```
+
+
+#load the dataset
+```{r}
+
+#full datapath: FINAL_Crypto_DATASET_EEG_CANTAB <- read_excel("Dropbox (BCH)/BEAN baseline EEG attention/1_PAPER_RS_EEG_CANTAB/Datasets/FINAL_Crypto_DATASET_EEG_CANTAB.xlsx")
+
+dat <- FINAL_Crypto_DATASET_EEG_CANTAB <- read_excel("FINAL_Crypto_DATASET_EEG_CANTAB.xlsx")
+
+#remove last row
+dat <- dat[-nrow(dat), ]
+
+#make categorical variables factors
+dat$cohort <- as.factor(dat$cohort)
+
+dat$sex <- as.factor(dat$sex)
+summary(dat$sex)
+
+dat$child_use_screens <- as.factor(dat$child_use_screens)
+
+#make ages numeric
+dat$age_mo_2yr_EEG <- as.numeric(dat$age_mo_2yr_EEG)
+
+
+```
+
+#log transform EEG variables
+```{r}
+
+dat$Log_central_z_T_6mo <- log10(dat$central_z_T_6mo)
+dat$Log_frontal_l_T_6mo <- log10(dat$frontal_l_T_6mo)
+dat$Log_frontal_r_T_6mo <- log10(dat$frontal_r_T_6mo)
+
+dat$Log_central_z_B_6mo <- log10(dat$central_z_B_6mo)
+dat$Log_frontal_l_B_6mo <- log10(dat$frontal_l_B_6mo)
+dat$Log_frontal_r_B_6mo <- log10(dat$frontal_r_B_6mo)
+
+dat$Log_central_z_T_2yr <- log10(dat$central_z_T_2yr)
+dat$Log_frontal_l_T_2yr <- log10(dat$frontal_l_T_2yr)
+dat$Log_frontal_r_T_2yr <- log10(dat$frontal_r_T_2yr)
+
+dat$Log_central_z_B_2yr <- log10(dat$central_z_B_2yr)
+dat$Log_frontal_l_B_2yr <- log10(dat$frontal_l_B_2yr)
+dat$Log_frontal_r_B_2yr <- log10(dat$frontal_r_B_2yr)
+
+#LOG descriptives
+summary(dat$Log_central_z_T_6mo)
+#below 3SD would be 0.53597
+
+summary(dat$Log_frontal_l_T_6mo)
+#below 3 SD would 1.1976 - 0.52498 = 0.6726
+
+
+
+summary(dat$Log_frontal_r_T_6mo)
+#below 3SD would be 0.687
+
+
+summary(dat$Log_central_z_T_2yr)
+#below 3SD would be 0.67737
+
+summary(dat$Log_frontal_l_T_2yr)
+#below 3SD would be 0.8533239
+
+summary(dat$Log_frontal_r_T_2yr)
+#below 3SD would be 0.8019
+
+#remove observations if below 3SD from mean 
+below_6mo_central_z_rows <- dat[dat$Log_central_z_T_6mo < 0.53597, ]
+print(below_6mo_central_z_rows)
+
+below_6mo_frontal_l_rows <- dat[dat$Log_frontal_l_T_6mo < 0.6726, ]
+print(below_6mo_frontal_l_rows)
+
+below_6mo_frontal_r_rows <- dat[dat$Log_frontal_l_T_6mo < 0.687, ]
+print(below_6mo_frontal_r_rows)
+
+
+#2yo - no one to be removed
+below_2yr_central_z_rows <- dat[dat$Log_central_z_T_2yr < 0.67737, ]
+print(below_2yr_central_z_rows)
+
+below_2yr_frontal_l_rows <- dat[dat$Log_frontal_l_T_2yr < 0.8533239, ]
+print(below_2yr_frontal_l_rows)
+
+below_2yr_frontal_r_rows <- dat[dat$Log_frontal_l_T_2yr < 0.8019, ]
+print(below_2yr_frontal_r_rows)
+
+
+#no outliers for 2yr
+write_xlsx(dat, "EEG_theta_data_wide.xlsx")
+
+
+
+
+
+```
+
+#calculate number of families living in poverty
+```{r}
+dat$income_to_needs_per_day <- dat$income_to_needs / 30.437
+summary(dat$income_to_needs_per_day)
+
+dat$extreme_poverty <- cut(dat$income_to_needs_per_day,
+                       breaks=c(-Inf, 167.42, Inf),
+                       labels=c('poverty', 'not_poverty'))
+
+summary(dat$extreme_poverty)
+108/(108+8)
+
+
+#calculate income per day 
+dat$income_per_day <- dat$income / 30.437
+summary(dat$income_per_day)
+
+
+#impute HAZ
+dat$HAZ_6mo_impute <- impute(dat$HAZ_6mo, method = "mean")
+summary(dat$HAZ_6mo)
+
+#impute income
+dat$income_per_day_impute <- impute(dat$income_per_day, method = "mean")
+
+
+
+
+```
+
+#descriptive statistics environmental variables
+```{r}
+
+summary(dat$sex)
+
+summary(dat$age_mo_6mo_EEG)
+sd(dat$age_mo_6mo_EEG, na.rm=TRUE)
+ggplot(dat, aes(x=age_mo_6mo_EEG)) + 
+  geom_histogram() 
+
+summary(dat$age_mo_2yr_EEG)
+sd(dat$age_mo_2yr_EEG, na.rm=TRUE)
+ggplot(dat, aes(x=age_mo_2yr_EEG)) + 
+  geom_histogram() 
+
+summary(dat$age_mo_5yr_cog_ass)
+sd(dat$age_mo_5yr_cog_ass, na.rm=TRUE)
+ggplot(dat, aes(x=age_mo_5yr_cog_ass)) + 
+  geom_histogram() 
+
+summary(dat$FCI_6mo)
+sd(dat$FCI_6mo, na.rm=TRUE)
+ggplot(dat, aes(x=FCI_6mo)) + 
+  geom_histogram() 
+
+summary(dat$paternal_yrsofed)
+sd(dat$paternal_yrsofed, na.rm=TRUE)
+ggplot(dat, aes(x=paternal_yrsofed)) + 
+  geom_histogram() 
+
+summary(dat$maternal_yrsofed)
+sd(dat$maternal_yrsofed, na.rm=TRUE)
+ggplot(dat, aes(x=maternal_yrsofed)) + 
+  geom_histogram() 
+
+summary(dat$income)
+sd(dat$income, na.rm=TRUE)
+ggplot(dat, aes(x=income)) + 
+  geom_histogram() 
+
+
+summary(dat$income_to_needs)
+sd(dat$income_to_needs, na.rm=TRUE)
+ggplot(dat, aes(x=income_to_needs)) + 
+  geom_histogram() 
+
+summary(dat$income_to_needs_per_day)
+sd(dat$income_to_needs_per_day, na.rm=TRUE)
+ggplot(dat, aes(x=income_to_needs_per_day)) + 
+  geom_histogram() 
+
+
+summary(dat$income_per_day)
+sd(dat$income_per_day)
+
+summary(dat$HAZ_6mo)
+sd(dat$HAZ_6mo, na.rm=TRUE)
+ggplot(dat, aes(x=HAZ_6mo)) + 
+  geom_histogram() 
+
+summary(dat$social_support_6mo)
+sd(dat$social_support_6mo, na.rm=TRUE)
+ggplot(dat, aes(x=social_support_6mo)) + 
+  geom_histogram() 
+
+summary(dat$PSS_sum_score)
+sd(dat$PSS_sum_score, na.rm=TRUE)
+ggplot(dat, aes(x=PSS_sum_score)) + 
+  geom_histogram() 
+
+```
+
+
+#calculate number of stunted children 
+```{r}
+
+dat$stunted <- cut(dat$HAZ_6mo,
+                       breaks=c(-Inf, -2, Inf),
+                       labels=c('stunted', 'not_stunted'))
+
+summary(dat$stunted)
+18/(93+18)
+
+```
+
+#Calculate # of mothers with low, medium, high stress 
+```{r}
+#0-13 = low stress
+
+#14-26 = moderate stress
+
+#27-40 = moderate stress 
+
+dat$PSS_categorites <- cut(dat$PSS_sum_score,
+                       breaks=c(0, 13, 26, 40),
+                       labels=c('Low', "Moderate", 'High'))
+
+summary(dat$PSS_categorites)
+22/115
+78/115
+15/115
+
+```
+
+
+#Theta EEG descriptives
+```{r}
+summary(dat$central_z_T_6mo)
+sd(dat$central_z_T_6mo, na.rm=TRUE)
+ggplot(dat, aes(x=central_z_T_6mo)) + 
+  geom_histogram() 
+
+
+summary(dat$frontal_l_T_6mo)
+sd(dat$frontal_l_T_6mo, na.rm=TRUE)
+ggplot(dat, aes(x=frontal_l_T_6mo)) + 
+  geom_histogram() 
+
+summary(dat$frontal_r_T_6mo)
+sd(dat$frontal_r_T_6mo, na.rm=TRUE)
+ggplot(dat, aes(x=frontal_r_T_6mo)) + 
+  geom_histogram() 
+
+
+summary(dat$central_z_T_2yr)
+sd(dat$central_z_T_2yr, na.rm=TRUE)
+ggplot(dat, aes(x=central_z_T_2yr)) + 
+  geom_histogram() 
+
+summary(dat$frontal_l_T_2yr)
+sd(dat$frontal_l_T_2yr, na.rm=TRUE)
+ggplot(dat, aes(x=frontal_l_T_2yr)) + 
+  geom_histogram() 
+
+summary(dat$frontal_r_T_2yr)
+sd(dat$frontal_r_T_2yr, na.rm=TRUE)
+ggplot(dat, aes(x=frontal_r_T_2yr)) + 
+  geom_histogram() 
+
+
+#LOG descriptives
+summary(dat$Log_central_z_T_6mo)
+sd(dat$Log_central_z_T_6mo, na.rm=TRUE)
+ggplot(dat, aes(x=Log_central_z_T_6mo)) + 
+  geom_histogram() 
+#below 3SD would be 0.53597
+
+summary(dat$Log_frontal_l_T_6mo)
+sd = sd(dat$Log_frontal_l_T_6mo, na.rm=TRUE)
+3*sd
+ggplot(dat, aes(x=Log_frontal_l_T_6mo)) + 
+  geom_histogram() 
+#below 3 SD would 1.1976 - 0.52498 = 0.6726
+
+
+
+summary(dat$Log_frontal_r_T_6mo)
+sd(dat$Log_frontal_r_T_6mo, na.rm=TRUE)
+ggplot(dat, aes(x=Log_frontal_r_T_6mo)) + 
+  geom_histogram() 
+#below 3SD would be 0.687
+
+
+summary(dat$Log_central_z_T_2yr)
+sd(dat$Log_central_z_T_2yr, na.rm=TRUE)
+ggplot(dat, aes(x=Log_central_z_T_2yr)) + 
+  geom_histogram() 
+#below 3SD would be 0.67737
+
+summary(dat$Log_frontal_l_T_2yr)
+sd(dat$Log_frontal_l_T_2yr, na.rm=TRUE)
+ggplot(dat, aes(x=Log_frontal_l_T_2yr)) + 
+  geom_histogram() 
+#below 3SD would be 0.8533239
+
+summary(dat$Log_frontal_r_T_2yr)
+sd(dat$Log_frontal_r_T_2yr, na.rm=TRUE)
+ggplot(dat, aes(x=Log_frontal_r_T_2yr)) + 
+  geom_histogram() 
+#below 3SD would be 0.8019
+
+
+
+```
+
+
+
+#Screen use descriptives
+```{r}
+
+summary(dat$child_use_screens)
+histogram(dat$child_use_screens)
+
+summary(dat$minutes_on_screens)
+sd(dat$minutes_on_screens, na.rm=TRUE)
+ggplot(dat, aes(x=minutes_on_screens)) + 
+  geom_histogram() 
+
+
+```
+
+#CANTAB descriptive statistics
+```{r}
+
+summary(dat$SWMTE)
+ggplot(dat, aes(x=SWMTE)) + 
+  geom_histogram() 
+
+summary(dat$PALTEA)
+sd(dat$PALTEA, na.rm=TRUE)
+ggplot(dat, aes(x=PALTEA)) + 
+  geom_histogram() 
+
+summary(dat$SSPFTUE)
+ggplot(dat, aes(x=SSPFTUE)) + 
+  geom_histogram() 
+
+summary(dat$SOCPSMMT)
+ggplot(dat, aes(x=SOCPSMMT)) + 
+  geom_histogram() 
+
+```
+#GNG descriptive statistics
+```{r}
+summary(dat$GNG_RT_avg)
+
+ggplot(dat, aes(x=GNG_RT_avg)) + 
+  geom_histogram() 
+
+summary(dat$GNG_accuracy_all)
+sd(dat$GNG_accuracy_all, na.rm=TRUE)
+
+ggplot(dat, aes(x=GNG_accuracy_all)) + 
+  geom_histogram() 
+
+
+```
+
+
+#WPPSI descriptive statistics
+```{r}
+summary(dat$viq_5yr)
+ggplot(dat, aes(x=viq_5yr)) + 
+  geom_histogram() 
+
+summary(dat$piq_5yr)
+ggplot(dat, aes(x=piq_5yr)) + 
+  geom_histogram() 
+
+summary(dat$fsiq_5yr)
+sd(dat$fsiq_5yr, na.rm=TRUE)
+ggplot(dat, aes(x=fsiq_5yr)) + 
+  geom_histogram() 
+
+cor.test(dat$fsiq_5yr, dat$piq_5yr) #0.89 correlation
+
+
+```
+
+#Correlation between screen use and cantab?
+```{r}
+cor.test(dat$minutes_on_screens, dat$PALTEA)
+cor.test(dat$minutes_on_screens, dat$SWMTE)
+cor.test(dat$minutes_on_screens, dat$SSPFTUE)
+cor.test(dat$minutes_on_screens, dat$SOCPSMMT)
+
+cor.test(dat$minutes_on_screens, dat$GNG_accuracy_go)
+
+
+##no correlation between minutes on screen and any CANTAB outcome
+
+```
+
+#correlations between maternal stress, depression, and social support
+```{r}
+cor.test(dat$social_support_6mo, dat$EPDS_6mo)
+cor.test(dat$PSS_sum_score, dat$EPDS_6mo)
+cor.test(dat$PSS_sum_score, dat$social_support_6mo)
+
+
+```
+
+
+
+
+#Correlation matrices of non-EEG measures 
+```{r}
+#correlation matrix with everything possible 
+corr_matrix_adv_beh <- select (dat, c(age_mo_6mo_EEG, age_mo_2yr_EEG, age_mo_5yr_cog_ass, maternal_yrsofed, paternal_yrsofed, income_to_needs_per_day, HAZ_6mo, FCI_6mo, PSS_sum_score, social_support_6mo, EPDS_6mo, minutes_on_screens, SWMTE, PALTEA, SSPFTUE, SOCPSMMT, viq_5yr, piq_5yr, fsiq_5yr))
+
+#colnames(corr_matrix_NIRS_2y) <- c("RSTG High TP-Novel", "LSTG High TP-Novel", "Child Adversity", "Maternal Adversity", "Environmental Adversity", "Income-to-Needs", "Maternal Education", "HAZ", "Language (Mullen)")
+
+
+rcorr(as.matrix(corr_matrix_adv_beh), type = c("pearson"))
+pval <- corr.test(corr_matrix_adv_beh, adjust="none")$p
+#pval_2y <- corr.test(corr_matrix_NIRS_2y, adjust="fdr")$p
+corr_adv_beh <- cor(corr_matrix_adv_beh, use="pairwise.complete.obs")
+
+corrplot(corr_adv_beh, tl.cex=0.8, tl.srt=45, p.mat = pval, method = 'color', diag = FALSE, 
+         sig.level = c(0.001, 0.01, 0.05), pch.cex = 0.6,
+         insig = 'label_sig', pch.col = 'grey20', order = 'original', tl.col="black")
+
+
+#correlation matrix with just the selected variables for final models 
+
+#covariates selected - age, sex, income to needs, maternal education
+#adversity measures selected - HAZ, FCI
+#CANTAB measure selected - PALTEA
+#WPPSI measure selected - FSIQ
+
+#correlation matrix with selected variables
+corr_matrix_select_adv_beh <- select (dat, c(maternal_yrsofed, income_to_needs_per_day, HAZ_6mo, PSS_sum_score, GNG_accuracy_all, PALTEA,fsiq_5yr))
+
+rcorr(as.matrix(corr_matrix_select_adv_beh), type = c("pearson"))
+pval <- corr.test(corr_matrix_select_adv_beh, adjust="none")$p
+#pval_2y <- corr.test(corr_matrix_NIRS_2y, adjust="fdr")$p
+corr_select_adv_beh <- cor(corr_matrix_select_adv_beh, use="pairwise.complete.obs")
+
+corrplot(corr_select_adv_beh, tl.cex=0.8, tl.srt=45, p.mat = pval, method = 'color', diag = FALSE, 
+         sig.level = c(0.001, 0.01, 0.05), pch.cex = 0.6,
+         insig = 'label_sig', pch.col = 'grey20', order = 'original', tl.col="black")
+
+
+
+```
+
+
+
+
+#check whether line noise correlated with power
+```{r}
+
+#correlation matrix with selected variables
+corr_matrix_theta_linenoise <- select (dat, c(central_z_T_6mo, frontal_l_T_6mo, frontal_r_T_6mo, central_z_T_2yr, frontal_l_T_2yr, frontal_r_T_2yr, central_z_B_6mo, frontal_l_B_6mo, frontal_r_B_6mo, central_z_B_2yr, frontal_l_B_2yr, frontal_r_B_2yr, linenoise_reduction_50hz_6mo, linenoise_reduction_50hz_2yr))
+
+corr_matrix_log_theta_linenoise <- select (dat, c(Log_central_z_T_6mo, Log_frontal_l_T_6mo, Log_frontal_r_T_6mo, Log_central_z_T_2yr, Log_frontal_l_T_2yr, Log_frontal_r_T_2yr, linenoise_reduction_50hz_6mo, linenoise_reduction_50hz_2yr))
+corr_matrix_log_theta_linenoise
+
+rcorr(as.matrix(corr_matrix_log_theta_linenoise), type = c("pearson"))
+pval <- corr.test(corr_matrix_log_theta_linenoise, adjust="none")$p
+#pval_2y <- corr.test(corr_matrix_NIRS_2y, adjust="fdr")$p
+corr_theta_linenoise <- cor(corr_matrix_log_theta_linenoise, use="pairwise.complete.obs")
+
+corrplot(corr_theta_linenoise, tl.cex=0.8, tl.srt=45, p.mat = pval, method = 'color', diag = FALSE, 
+         sig.level = c(0.001, 0.01, 0.05), pch.cex = 0.6,
+         insig = 'label_sig', pch.col = 'grey20', order = 'original', tl.col="black")
+
+```
+
+
+#corr matrix with all included variables
+```{r}
+#correlation matrix with selected variables
+corr_matrix_EEG_behavior <- select (dat, c(central_z_T_6mo, frontal_l_T_6mo, frontal_r_T_6mo, central_z_T_2yr, frontal_l_T_2yr, frontal_r_T_2yr, dat$central_z_T_diff, dat$frontal_l_T_diff, dat$frontal_r_T_diff, maternal_yrsofed, income_to_needs_per_day, HAZ_6mo, PSS_sum_score, PALTEA, GNG_accuracy_all, fsiq_5yr))
+
+new_column_names <- c("6mo Frontocentral Theta", "6mo Frontal Left Theta", "6mo Frontal Right Theta", "2yr Frontocentral Theta", "2yr Frontal Left Theta", "2yr Frontal Right Theta", "Maternal Education (yrs)", "Adjusted Family Income", "HAZ", "Maternal Stress", "Working Memory", "Inhibition", "Full-Scale IQ")
+
+colnames(corr_matrix_EEG_behavior) <- new_column_names
+
+rcorr(as.matrix(corr_matrix_EEG_behavior), type = c("pearson"))
+pval <- corr.test(corr_matrix_EEG_behavior, adjust="none")$p
+#pval_2y <- corr.test(corr_matrix_NIRS_2y, adjust="fdr")$p
+corr_EEG_behavior <- cor(corr_matrix_EEG_behavior, use="pairwise.complete.obs")
+
+corrplot(corr_EEG_behavior, tl.cex=0.8, tl.srt=45, p.mat = pval, method = 'color', diag = FALSE, 
+         sig.level = c(0.001, 0.01, 0.05), pch.cex = 0.6,
+         insig = 'label_sig', pch.col = 'grey20', order = 'original', tl.col="black")
+
+#try to make it so stars and numbers appear at the same time
+#trace(corrplot, edit=TRUE)
+
+
+
+corrplot(corr_EEG_behavior, tl.cex=0.8, tl.srt=45, p.mat = pval, method = 'color', type="lower", diag = FALSE, 
+         sig.level = c(0.001, 0.01, 0.05), pch.cex = 0.8, number.cex=0.5, addCoef.col ='black',
+         insig = 'label_sig', pch.col = 'black', order = 'original', tl.col="black")
+
+
+
+
+
+
+```
+
+#corr matrix with change in theta power 
+```{r}
+#change in theta power variables
+dat$Log_central_z_T_change <- dat$Log_central_z_T_2yr - dat$Log_central_z_T_6mo
+
+dat$Log_frontal_l_T_change <- dat$Log_frontal_l_T_2yr - dat$Log_frontal_l_T_6mo
+
+dat$Log_frontal_r_T_change <- dat$Log_frontal_r_T_2yr - dat$Log_frontal_r_T_6mo
+
+
+
+corr_matrix_log_theta_change <- select (dat, c(Log_central_z_T_6mo, Log_frontal_l_T_6mo, Log_frontal_r_T_6mo, Log_central_z_T_2yr, Log_frontal_l_T_2yr, Log_frontal_r_T_2yr, Log_central_z_T_change, Log_frontal_l_T_change, Log_frontal_r_T_change, maternal_yrsofed, income_to_needs_per_day, HAZ_6mo, PSS_sum_score, PALTEA, GNG_accuracy_all, fsiq_5yr))
+
+rcorr(as.matrix(corr_matrix_log_theta_change), type = c("pearson"))
+pval <- corr.test(corr_matrix_log_theta_change, adjust="none")$p
+#pval_2y <- corr.test(corr_matrix_NIRS_2y, adjust="fdr")$p
+corr_EEG_behavior <- cor(corr_matrix_log_theta_change, use="pairwise.complete.obs")
+
+corrplot(corr_matrix_log_theta_change, tl.cex=0.8, tl.srt=45, p.mat = pval, method = 'color', diag = FALSE, 
+         sig.level = c(0.001, 0.01, 0.05), pch.cex = 0.6,
+         insig = 'label_sig', pch.col = 'grey20', order = 'original', tl.col="black")
+
+
+
+
+```
+
+#Aim 1 - LMMs for just theta power 
+
+#create long dataset (convert from wide)
+```{r}
+
+#create newdataset with only theta power and rename columns 
+
+dat_EEG_sub <- select (dat, c(sid, Log_central_z_T_6mo, Log_frontal_l_T_6mo, Log_frontal_r_T_6mo, Log_central_z_T_2yr, Log_frontal_l_T_2yr, Log_frontal_r_T_2yr, sex, maternal_yrsofed, income_per_day_impute, HAZ_6mo_impute, PSS_sum_score))
+
+#rename columns 
+colnames(dat_EEG_sub) <- c("sid", "6mo_CentralZ", "6mo_FrontalL", "6mo_FrontalR", "2yr_CentralZ", "2yr_FrontalL", "2yr_FrontalR", "sex", "maternal_yrsofed", "income_per_day_impute", "HAZ_6mo_impute", "PSS_sum_score")
+
+library(tidyr)
+
+dat_EEG_long <- pivot_longer(dat_EEG_sub, 
+                          cols = -c(sid, sex, maternal_yrsofed, income_per_day_impute, HAZ_6mo_impute, PSS_sum_score), 
+                          names_to = c("timepoint", "ROI"), 
+                          names_sep = "_", 
+                          values_to = "theta_power")
+
+#make 6mo the reference category
+dat_EEG_long$timepoint <- factor(dat_EEG_long$timepoint)
+summary(dat_EEG_long$timepoint)
+dat_EEG_long$timepoint <- relevel(dat_EEG_long$timepoint, ref = "6mo")
+
+
+#now need to create three separate datasets for each ROI separately 
+dat_EEG_long_central_z <- filter(dat_EEG_long, ROI == "CentralZ")
+dat_EEG_long_frontal_l <- filter(dat_EEG_long, ROI == "FrontalL")
+dat_EEG_long_frontal_r <- filter(dat_EEG_long, ROI == "FrontalR")
+
+```
+
+
+#Model 1: one big model with just EEG data
+```{r}
+#random intercept for participant - can have different baseline levels of theta
+#random slope for participant - can have different slopes between 6mo and 2yr
+lmm_rand_time <- lmer(theta_power ~ ROI * timepoint + (1 + timepoint| sid), data = dat_EEG_long)
+
+summary(lmm_rand_time)
+confint(lmm_rand_time)
+AIC(lmm_rand_time)
+BIC(lmm_rand_time)
+logLik(lmm_rand_time)
+
+
+#variance explained by individual variation: 
+0.024093 / (0.024093 + 0.037238 + 0.004808)
+#variance explained by timepoint:
+0.037238 / (0.024093 + 0.037238 + 0.004808)
+#variance explained by residual:
+0.004808 / (0.024093 + 0.037238 + 0.004808)
+
+
+
+
+
+```
+
+
+#Aim 2: add adversity measures to one big model
+```{r}
+
+#impute HAZ and income (above)
+
+#no interaction terms
+lmm_rand_time_adv <- lmer(theta_power ~ sex + maternal_yrsofed + income_per_day_impute + HAZ_6mo_impute + PSS_sum_score + ROI * timepoint + (1 + timepoint| sid), data = dat_EEG_long)
+summary(lmm_rand_time_adv)
+confint(lmm_rand_time_adv)
+AIC(lmm_rand_time_adv)
+BIC(lmm_rand_time_adv)
+logLik(lmm_rand_time_adv)
+
+
+
+#interaction terms
+lmm_rand_time_adv_inter <- lmer(theta_power ~ sex*timepoint + maternal_yrsofed*timepoint + income_per_day_impute*timepoint + HAZ_6mo_impute*timepoint + PSS_sum_score*timepoint + ROI*timepoint + (1 + timepoint| sid), data = dat_EEG_long)
+summary(lmm_rand_time_adv_inter)
+confint(lmm_rand_time_adv_inter)
+nobs(lmm_rand_time_adv_inter)
+
+AIC(lmm_rand_time_adv_inter)
+BIC(lmm_rand_time_adv_inter)
+logLik(lmm_rand_time_adv_inter)
+
+
+#worse AIC and BIC when include adversity measures - does not improve the model
+
+
+```
+
+
+#Likelihood ratio tests 
+```{r}
+
+anova(lmm_rand_time, lmm_rand_time_adv)
+
+anova(lmm_rand_time_adv, lmm_rand_time_adv_inter)
+
+anova(lmm_rand_time, lmm_rand_time_adv_inter)
+
+
+
+```
+
+
+#t-tests for ROI differences within age (probably don't need this)
+```{r}
+
+#CREATE AVERAGE OF THETA POWER 
+dat$Log_T_6mo_avg <- (dat$Log_central_z_T_6mo + dat$Log_frontal_l_T_6mo + dat$Log_frontal_r_T_6mo)/3
+dat$Log_T_2yr_avg <- (dat$Log_central_z_T_2yr + dat$Log_frontal_l_T_2yr + dat$Log_frontal_r_T_2yr)/3
+
+t.test(dat$Log_T_6mo_avg, dat$Log_T_2yr_avg)
+
+
+
+#do follow-up t-tests to see whether differences between ROIs within each timepoint
+
+t.test(dat$Log_central_z_T_6mo, dat$Log_frontal_l_T_6mo)
+t.test(dat$Log_central_z_T_6mo, dat$Log_frontal_r_T_6mo)
+t.test(dat$Log_frontal_l_T_6mo, dat$Log_frontal_r_T_6mo)
+#difference between centralZ and two frontal ones (higher in frontal), but no difference between frontal l and r... more lateralized (but not to one side or the other)
+
+t.test(dat$Log_central_z_T_2yr, dat$Log_frontal_l_T_2yr)
+t.test(dat$Log_central_z_T_2yr, dat$Log_frontal_r_T_2yr)
+t.test(dat$Log_frontal_l_T_2yr, dat$Log_frontal_r_T_2yr)
+#difference between frontal l and central z (higher in frontal l) at least before FDR. no difference between central z and frontal r or frontal l or r
+
+#conclusion - maybe more evenly distributed at 2yrs 
+
+
+#need to correct for multiple comparisons if go this route (correct for 3 or six tests?)
+
+#correcting just within 6mo
+p_values_6mo <- c(0.01218509, 0.0141507, 0.910078)
+fdr_corrected_p_values_6mo <- p.adjust(p_values_6mo, method = "fdr")
+fdr_corrected_p_values_6mo
+
+
+#correcting just within 2yr
+p_values_2yr <- c(0.03264265, 0.189457, 0.3962806)
+fdr_corrected_p_values_2yr <- p.adjust(p_values_2yr, method = "fdr")
+fdr_corrected_p_values_2yr
+
+
+#correcting within everything
+p_values_all <- c(0.01218509, 0.0141507, 0.910078, 0.03264265, 0.189457, 0.3962806)
+fdr_corrected_p_values_all <- p.adjust(p_values_all, method = "fdr")
+fdr_corrected_p_values_all
+
+
+
+```
+
+#create a bar plot to display these results
+```{r}
+#relevel ROI
+dat_EEG_long$ROI_relev <- factor(dat_EEG_long$ROI, levels = c("FrontalL", "CentralZ", "FrontalR"))
+
+#calculate standard error of each group
+summary_data <- dat_EEG_long %>%
+  group_by(timepoint, ROI_relev) %>%
+  summarise(mean_theta_power = mean(theta_power, na.rm=TRUE),
+            se_theta_power = sd(theta_power, na.rm=TRUE) / sqrt(n()))
+
+ggplot(summary_data, aes(x = timepoint, y = mean_theta_power, fill = ROI_relev)) +
+  geom_bar(stat = "identity", position = "dodge") + 
+geom_errorbar(aes(ymin = mean_theta_power - se_theta_power, ymax = mean_theta_power + se_theta_power),
+                position = position_dodge(width = 0.9), width = 0.25) +
+  labs(x = "Timepoint", y = "Log Absolute Theta Power") +
+  scale_fill_manual(values = c("FrontalL" = "orange", "CentralZ" = "purple", "FrontalR" = "green3"), 
+                    labels = c("Frontal Left", "Frontocentral", "Frontal Right")) +
+  coord_cartesian(ylim = c(1, 1.4)) +
+  theme_minimal() + 
+  theme(panel.grid = element_blank()) + 
+  labs(fill = "ROI")
+
+
+
+ggplot(dat_EEG_long, aes(x = timepoint, y = theta_power, fill = ROI_relev)) +
+  geom_bar(stat = "summary", position = "dodge") +
+  labs(x = "Timepoint", y = "Log Absolute Theta Power") +
+  scale_fill_manual(values = c("FrontalL" = "orange", "CentralZ" = "purple", "FrontalR" = "green3"), 
+                    labels = c("Frontal Left", "Frontocentral", "Frontal Right")) +
+  theme_minimal() + 
+  theme(panel.grid = element_blank()) + 
+  labs(fill = "ROI") + 
+      coord_cartesian(ylim = c(1, 1.75)) # Adjust y-axis limits without affecting the bars 
+
+
+  
+
+
+```
+
+
+
+#Aim 3 - regressions predicting cognition
+
+#Regressions: adversity => behavior
+```{r}
+
+adv_WPPSI <- lm (fsiq_5yr ~ sex + maternal_yrsofed + income_to_needs_per_day + HAZ_6mo + PSS_sum_score, data = dat)
+summary(adv_WPPSI)
+ nobs(adv_WPPSI)
+ 
+ adv_PALTEA <- lm (PALTEA ~ sex + maternal_yrsofed + income_to_needs_per_day + HAZ_6mo + PSS_sum_score, data = dat)
+summary(adv_PALTEA)
+ nobs(adv_PALTEA)
+
+
+adv_GNG <- lm (GNG_accuracy_all ~ sex + maternal_yrsofed + income_to_needs_per_day + HAZ_6mo + PSS_sum_score + fsiq_5yr, data = dat)
+summary(adv_GNG)
+nobs(adv_GNG)
+
+
+adv_PALTEA_control_IQ <- lm (PALTEA ~ sex + maternal_yrsofed + income_to_needs_per_day + HAZ_6mo + PSS_sum_score + fsiq_5yr, data = dat)
+summary(adv_PALTEA_control_IQ)
+ nobs(adv_PALTEA)
+
+
+adv_GNG_control_IQ <- lm (GNG_accuracy_all ~ sex + maternal_yrsofed + income_to_needs_per_day + HAZ_6mo + PSS_sum_score + fsiq_5yr, data = dat)
+summary(adv_GNG_control_IQ)
+nobs(adv_GNG)
+
+
+ #correct for multiple comparisons (FDR)
+ p_values_adv_WPPSI <- summary(adv_WPPSI)$coef[, "Pr(>|t|)"]
+ p_values_adv_WPPSI
+p_values_adv_PALTEA <- summary(adv_PALTEA)$coef[, "Pr(>|t|)"]
+p_values_adv_PALTEA
+p_values_adv_GNG <- summary(adv_GNG)$coef[, "Pr(>|t|)"]
+
+all_p_values_adv <- c(p_values_adv_WPPSI, p_values_adv_PALTEA, p_values_adv_GNG)
+all_p_values_adv
+corrected_p_values_adv <- p.adjust(all_p_values_adv, method = "fdr")
+corrected_p_values_adv
+
+
+```
+
+#Regressions: 2yr EEG => Cognition
+
+```{r}
+options(digits=10)
+theta_WPPSI <- lm(fsiq_5yr ~ Log_central_z_T_2yr + Log_frontal_l_T_2yr + Log_frontal_r_T_2yr, data = dat)
+summary(theta_WPPSI)
+nobs(theta_WPPSI)
+
+theta_GNG <- lm(GNG_accuracy_all ~ Log_central_z_T_2yr + Log_frontal_l_T_2yr + Log_frontal_r_T_2yr, data = dat)
+summary(theta_GNG)
+nobs(theta_GNG)
+
+
+theta_PALTEA <- lm(PALTEA ~ Log_central_z_T_2yr + Log_frontal_l_T_2yr + Log_frontal_r_T_2yr, data = dat)
+summary(theta_PALTEA)
+nobs(theta_PALTEA)
+
+
+ #correct for multiple comparisons (FDR)
+ p_values_theta_WPPSI <- summary(theta_WPPSI)$coef[, "Pr(>|t|)"]
+ p_values_theta_WPPSI
+p_values_theta_PALTEA <- summary(theta_PALTEA)$coef[, "Pr(>|t|)"]
+p_values_theta_PALTEA
+p_values_theta_GNG <- summary(theta_GNG)$coef[, "Pr(>|t|)"]
+p_values_theta_GNG
+
+all_p_values_theta <- c(p_values_theta_WPPSI, p_values_theta_PALTEA, p_values_theta_GNG)
+all_p_values_theta
+corrected_p_values_theta <- p.adjust(all_p_values_theta, method = "fdr")
+corrected_p_values_theta
+
+```
+
+
+#Regressions: 6mo EEG => Cognition
+
+```{r}
+options(digits=10)
+theta_WPPSI <- lm(fsiq_5yr ~ Log_central_z_T_6mo + Log_frontal_l_T_6mo + Log_frontal_r_T_6mo, data = dat)
+summary(theta_WPPSI)
+nobs(theta_WPPSI)
+
+theta_GNG <- lm(GNG_accuracy_all ~ Log_central_z_T_6mo + Log_frontal_l_T_6mo + Log_frontal_r_T_6mo, data = dat)
+summary(theta_GNG)
+nobs(theta_GNG)
+
+
+theta_PALTEA <- lm(PALTEA ~ Log_central_z_T_6mo + Log_frontal_l_T_6mo + Log_frontal_r_T_6mo, data = dat)
+summary(theta_PALTEA)
+nobs(theta_PALTEA)
+
+
+ #correct for multiple comparisons (FDR)
+ p_values_theta_WPPSI <- summary(theta_WPPSI)$coef[, "Pr(>|t|)"]
+ p_values_theta_WPPSI
+p_values_theta_PALTEA <- summary(theta_PALTEA)$coef[, "Pr(>|t|)"]
+p_values_theta_PALTEA
+p_values_theta_GNG <- summary(theta_GNG)$coef[, "Pr(>|t|)"]
+p_values_theta_GNG
+
+all_p_values_theta <- c(p_values_theta_WPPSI, p_values_theta_PALTEA, p_values_theta_GNG)
+all_p_values_theta
+corrected_p_values_theta <- p.adjust(all_p_values_theta, method = "fdr")
+corrected_p_values_theta
+
+```
+
+
+#mediation analyses
+```{r}
+#HAZ => Central_Z theta => FSIQ
+
+#open and run process.R file
+#IV to mediator = a path
+#mediator to DV = b path (Central Z to IQ)
+#direct path IV to DV = c' path (HAZ => IQ)
+#total effect = c path
+
+
+#with just central_z
+process (data = dat, y = "fsiq_5yr", x = "HAZ_6mo", m ="central_z_T_2yr", model = 4)
+process (data = dat, y = "fsiq_5yr", x = "HAZ_6mo", m ="central_z_T_2yr", model = 4, effsize =1, total =1, stand =1, contrast =1, boot = 10000 , modelbt = 1, seed = 654321)
+
+
+#with all three ROIs
+process(data = dat, y = "fsiq_5yr", x = "HAZ_6mo", m =c("central_z_T_2yr", "frontal_l_T_2yr", "frontal_r_T_2yr"), model = 4, effsize =1, total =1, stand =1, contrast =1, boot = 10000 , modelbt = 1, seed = 654321)
+
+
+```
+
